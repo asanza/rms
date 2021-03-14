@@ -117,6 +117,9 @@ uint16_t sqrtd(uint32_t x)
     return g;
 }
 
+typedef int32_t f32;
+typedef int16_t f16;
+
 RINGBUF_CREATE(buf, SAMPLE_RATE / MIN_FREQ + 1);
 
 int16_t rmscalc(int16_t sample, uint16_t freq)
@@ -133,7 +136,7 @@ int16_t rmscalc(int16_t sample, uint16_t freq)
     return isqrt64(val / size);
 }
 
-int16_t rmscalc_sp(int16_t sample, uint16_t freq) 
+int16_t rmscalc_sp(int16_t sample, uint16_t freq)
 {
     static uint32_t oval = 0;
     static uint32_t aval = 0;
@@ -144,11 +147,58 @@ int16_t rmscalc_sp(int16_t sample, uint16_t freq)
     aval += sample * sample;
     scnt++;
 
-    if( scnt >= samples ) {
+    if (scnt >= samples)
+    {
         oval = sqrtd(aval / samples);
         aval = 0;
         scnt = 0;
     }
 
     return oval;
+}
+
+/* optimized 1 order frac 32 filter */
+struct f16iir_filter_1od
+{
+    f16 a;
+    f16 b[2];
+};
+
+/**
+ * @brief Delay line for the explicit rms converter
+ */
+struct f16rms_dl
+{
+    f16 dx[2];
+    f16 dy[2];
+};
+
+f16 f16rms_explicit(const struct f16iir_filter_1od *f, struct f16rms_dl *dl, f16 x)
+{
+    f32 t, a;
+    t = x * x >> 15;
+    a = t;
+    /*
+   * first recursive first order filter
+   * The filter is calculated with following equation:
+   *
+   *  y[n] = b[0] * x[n] + dx
+   *    dx = b[1] * x[n] - a[0] * dy
+   *    dy = y
+   */
+    a = a * f->b[0] >> 15;
+    a = a + (dl->dx[0] * f->b[1] >> 15);
+    dl->dx[0] = t;
+    a = a + (dl->dy[0] * f->a >> 15);
+    dl->dy[0] = a;
+    /*
+   * This is the second of the cascade of recursive filters
+   */
+    a = a * f->b[0] >> 15;
+    a = a + (dl->dx[1] * f->b[1] >> 15);
+    dl->dx[1] = dl->dy[0];
+    a = a + (dl->dy[1] * f->a >> 15);
+    dl->dy[1] = a;
+    /* return the square root of the value */
+    return sqrtd(a);
 }
