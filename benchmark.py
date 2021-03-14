@@ -15,11 +15,14 @@ class RMS:
 
         self.lib = ct.cdll.LoadLibrary(libname)
 
-        self.lib.rmscalc.restype = ct.c_uint16
-        self.lib.rmscalc.argtypes = [ct.c_uint16, ct.c_uint16]
+        self.lib.rmscalc.restype = ct.c_int16
+        self.lib.rmscalc.argtypes = [ct.c_int16, ct.c_int16]
 
-        self.lib.rmscalc_sp.restype = ct.c_uint16
-        self.lib.rmscalc_sp.argtypes = [ct.c_uint16, ct.c_uint16]
+        self.lib.rmscalc_sp.restype = ct.c_int16
+        self.lib.rmscalc_sp.argtypes = [ct.c_int16, ct.c_int16]
+
+        self.lib.rmscalc_ex.restype = ct.c_int16
+        self.lib.rmscalc_ex.argtypes = [ct.c_int16]
 
     def rmscalc(self, sample, freq):
         return self.lib.rmscalc(sample, freq)
@@ -27,11 +30,14 @@ class RMS:
     def rmscalc_sp(self, sample, freq):
         return self.lib.rmscalc_sp(sample, freq)
 
+    def rmscalc_ex(self, sample):
+        return self.lib.rmscalc_ex(sample)
+
 if __name__ == "__main__":
     rms = RMS()
-    f = 55.0
+    f = 50.0
     t = np.arange(0, 1, 1/1500)
-    v = np.sin(2 * np.pi * f * t)
+    v = .5 * np.sin(2 * np.pi * f * t) + .5 * np.random.normal(0,.1,len(t))
     # v[v>0] = 1
     # v[v<0] = -1
     k = ((2**15) - 1) / 600
@@ -40,11 +46,14 @@ if __name__ == "__main__":
         vs = v * a * k    
         r = []
         p = []
+        e = []
         for i in vs:
             tmp = rms.rmscalc(np.uint16(i), np.uint16(f * 10))
             r.append((tmp / k))
             tmp = rms.rmscalc_sp(np.uint16(i), np.uint16(f * 10))
             p.append(tmp/k)
+            tmp = rms.rmscalc_ex(np.uint16(i))
+            e.append(tmp/k)
 
         rrms = a * np.sqrt(2) / 2
         crms = np.average(r[120:])
@@ -53,10 +62,14 @@ if __name__ == "__main__":
         prms = np.average(p[120:])
         perr = 100 * np.abs(rrms - prms) / rrms
 
+        erms = np.average(e[120:])
+        eerr = 100 * np.abs(rrms - erms) / rrms
+
         # print('Real: {0:.1f}, RMS: {1:.1f}, Error: {2:.1f}'.format(rrms, crms, err))
         #print(np.average(r[120:]))
         # print('Real: {0:.1f}, RMS: {1:.1f}, Error: {2:.1f}, Error: {3:.1f}'.format(rrms, crms, err, perr))
 
     plt.plot(t, r)
     plt.plot(t, p)
+    plt.plot(t, e)
     plt.show()

@@ -117,6 +117,7 @@ uint16_t sqrtd(uint32_t x)
     return g;
 }
 
+typedef int64_t f64;
 typedef int32_t f32;
 typedef int16_t f16;
 
@@ -169,36 +170,53 @@ struct f16iir_filter_1od
  */
 struct f16rms_dl
 {
-    f16 dx[2];
-    f16 dy[2];
+    f64 dx[3];
+    f64 dy[3];
 };
 
 f16 f16rms_explicit(const struct f16iir_filter_1od *f, struct f16rms_dl *dl, f16 x)
 {
-    f32 t, a;
-    t = x * x >> 15;
-    a = t;
+    f64 y, z;
+    z = (f64) x * x;
+
     /*
-   * first recursive first order filter
-   * The filter is calculated with following equation:
-   *
-   *  y[n] = b[0] * x[n] + dx
-   *    dx = b[1] * x[n] - a[0] * dy
-   *    dy = y
-   */
-    a = a * f->b[0] >> 15;
-    a = a + (dl->dx[0] * f->b[1] >> 15);
-    dl->dx[0] = t;
-    a = a + (dl->dy[0] * f->a >> 15);
-    dl->dy[0] = a;
-    /*
-   * This is the second of the cascade of recursive filters
-   */
-    a = a * f->b[0] >> 15;
-    a = a + (dl->dx[1] * f->b[1] >> 15);
-    dl->dx[1] = dl->dy[0];
-    a = a + (dl->dy[1] * f->a >> 15);
-    dl->dy[1] = a;
+     * first recursive first order filter
+     * The filter is calculated with following equation:
+     *
+     *     y = b[0] * x + dx
+     *    dx = b[1] * x - a[0] * dy
+     *    dy = y
+     */
+   y = (f->b[0] * z >> 15) + dl->dx[0];
+   dl->dx[0] = (f->b[1] * z >> 15) - (f->a * dl->dy[0] >> 15);
+   dl->dy[0] = y;
+   
+   /*
+    * This is the second of the cascade of recursive filters
+    */
+   z = (f->b[0] * y >> 15) + dl->dx[1];
+   dl->dx[1] = (f->b[1] * y  - f->a * dl->dy[1]) >> 15;
+   dl->dy[1] = z;
+
+   z = (f->b[0] * y >> 15) + dl->dx[1];
+   dl->dx[1] = (f->b[1] * y  - f->a * dl->dy[1]) >> 15;
+   dl->dy[1] = z;
+
+
     /* return the square root of the value */
-    return sqrtd(a);
+    return sqrtd(z);
+}
+
+#define F16(x)   (f32)((x)*(((x)>0)?0x7FFFUL:0x8000UL))
+
+f16 rmscalc_ex(f16 x) {
+    static struct f16iir_filter_1od f = {
+        .a = F16(-0.98692636),
+        .b = {F16(0.00653682), F16(0.00653682)},
+    };
+    static struct f16rms_dl dl = {
+        .dx = {0},
+        .dy = {0}
+    };
+    return f16rms_explicit(&f, &dl, x);
 }
